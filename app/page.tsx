@@ -661,62 +661,85 @@ export default function WallpaperStillStudio() {
           const studio = window.__WE_STUDIO__;
           if (!studio || data.token !== studio.token || data.type !== 'we-capture') return;
           try {
-            await new Promise(resolve => setTimeout(resolve, Math.max(0, data.delay || 0)));
-            studio.setCapturing(true);
-            if (data.freeze) document.documentElement.classList.add('we-freeze');
-            if (document.fonts?.ready) await document.fonts.ready;
-            const source = await window.html2canvas(document.documentElement, {
-              width: window.innerWidth,
-              height: window.innerHeight,
-              scale: data.width / window.innerWidth,
-              backgroundColor: studio.getConfig().overrideBackground ? studio.getConfig().background : null,
-              useCORS: true,
-              allowTaint: false,
-              logging: false,
-              windowWidth: window.innerWidth,
-              windowHeight: window.innerHeight,
-              onclone: clonedDocument => {
-                // html2canvas can omit CSS-generated ::after content in its cloned document.
-                // Materialize the Lycoris support pole as a real element for reliable PNG export.
-                const root = clonedDocument.documentElement;
-                if (!root.classList.contains('we-lycoris-layout')) return;
-                const cloneWindow = clonedDocument.defaultView;
-                if (!cloneWindow) return;
-                const poleClones = [];
-                clonedDocument.querySelectorAll('.sakana-box').forEach(box => {
-                  const pseudo = cloneWindow.getComputedStyle(box, '::after');
-                  const content = pseudo.getPropertyValue('content');
-                  if (!content || content === 'none' || content === 'normal' ||
-                      pseudo.display === 'none' || pseudo.visibility === 'hidden' ||
-                      Number(pseudo.opacity) === 0) return;
-                  const pole = clonedDocument.createElement('div');
-                  pole.setAttribute('data-we-export-static-pole', '');
-                  for (let i = 0; i < pseudo.length; i += 1) {
-                    const property = pseudo.item(i);
-                    const value = pseudo.getPropertyValue(property);
-                    if (value) pole.style.setProperty(property, value, 'important');
-                  }
-                  pole.style.removeProperty('content');
-                  pole.style.setProperty('pointer-events', 'none', 'important');
-                  poleClones.push({ box, pole });
-                });
-                if (!poleClones.length) return;
-                const poleStyle = clonedDocument.createElement('style');
+            let cleanupCapture = () => {};
+            try {
+              await new Promise(resolve => setTimeout(resolve, Math.max(0, data.delay || 0)));
+              studio.setCapturing(true);
+              if (data.freeze) document.documentElement.classList.add('we-freeze');
+              if (document.fonts?.ready) await document.fonts.ready;
+
+              // Create the static support poles in the live document before html2canvas
+              // clones it. This avoids relying on pseudo-element rendering in the clone.
+              const root = document.documentElement;
+              if (root.classList.contains('we-lycoris-layout')) {
+                const config = studio.getConfig();
+                const poleCurve = Number(config.poleCurve || 0);
+                const poleWidth = Math.max(1, Number(config.poleWidth || 10));
+                const insertedPoles = [];
+                const poleStyle = document.createElement('style');
+                poleStyle.setAttribute('data-we-export-pole-style', '');
                 poleStyle.textContent = 'html.we-exporting-static-poles .sakana-box::after { content: none !important; display: none !important; }';
-                clonedDocument.head.appendChild(poleStyle);
+                document.head.appendChild(poleStyle);
                 root.classList.add('we-exporting-static-poles');
-                poleClones.forEach(({ box, pole }) => box.appendChild(pole));
-              },
-            });
-            const output = document.createElement('canvas');
-            output.width = data.width;
-            output.height = data.height;
-            output.getContext('2d').drawImage(source, 0, 0, data.width, data.height);
-            output.toBlob(blob => {
-              parent.postMessage({ type: 'we-capture', token: studio.token, blob }, '*');
-              document.documentElement.classList.remove('we-freeze');
-              studio.setCapturing(false);
-            }, 'image/png');
+                document.querySelectorAll('.sakana-box').forEach(box => {
+                  const pole = document.createElement('div');
+                  pole.setAttribute('data-we-export-static-pole', '');
+                  pole.style.cssText = [
+                    'position:absolute',
+                    'z-index:1',
+                    'top:540px',
+                    'left:50%',
+                    'width:' + Math.abs(poleCurve) + 'px',
+                    'height:calc(100vh + 360px)',
+                    'border-left:' + poleWidth + 'px solid #24366f',
+                    'border-radius:50% 0 0 50%',
+                    'pointer-events:none',
+                    'transform:translateX(-50%) scaleX(' + (poleCurve < 0 ? -1 : 1) + ')',
+                    'transform-origin:top center'
+                  ].join(';') + ';';
+                  box.appendChild(pole);
+                  insertedPoles.push(pole);
+                });
+                cleanupCapture = () => {
+                  insertedPoles.forEach(pole => pole.remove());
+                  poleStyle.remove();
+                  root.classList.remove('we-exporting-static-poles');
+                };
+              }
+
+              // Let the browser apply the temporary pole nodes and suppression rule.
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+              const source = await window.html2canvas(document.documentElement, {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                scale: data.width / window.innerWidth,
+                backgroundColor: studio.getConfig().overrideBackground ? studio.getConfig().background : null,
+                useCORS: true,
+                allowTaint: false,
+                logging: false,
+                windowWidth: window.innerWidth,
+                windowHeight: window.innerHeight,
+              });
+              const output = document.createElement('canvas');
+              output.width = data.width;
+              output.height = data.height;
+              const outputContext = output.getContext('2d');
+              if (!outputContext) throw new Error('无法创建导出画布');
+              outputContext.drawImage(source, 0, 0, data.width, data.height);
+              output.toBlob(blob => {
+                cleanupCapture();
+                document.documentElement.classList.remove('we-freeze');
+                studio.setCapturing(false);
+                if (!blob) {
+                  parent.postMessage({ type: 'we-capture-error', token: studio.token, message: '无法生成 PNG 图片' }, '*');
+                  return;
+                }
+                parent.postMessage({ type: 'we-capture', token: studio.token, blob }, '*');
+              }, 'image/png');
+            } catch (error) {
+              cleanupCapture();
+              throw error;
+            }
           } catch (error) {
             document.documentElement.classList.remove('we-freeze');
             studio.setCapturing(false);
