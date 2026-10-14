@@ -29,6 +29,15 @@ test("the capture bridge is valid JavaScript", () => {
   assert.doesNotThrow(() => new Function(templateBody("captureBridge.textContent")));
 });
 
+test("the capture bridge materializes Lycoris pseudo-elements before PNG export", () => {
+  const bridge = templateBody("captureBridge.textContent");
+  assert.match(bridge, /onclone:\s*clonedDocument\s*=>/);
+  assert.match(bridge, /data-we-export-static-pole/);
+  assert.match(bridge, /we-exporting-static-poles/);
+  assert.match(bridge, /pseudo\.item\(i\)/);
+  assert.match(bridge, /content: none !important; display: none !important/);
+});
+
 test("the preview uses srcDoc so the complete rewritten project reaches the iframe", () => {
   assert.match(source, /srcDoc=\{previewHtml\}/);
   assert.doesNotMatch(source, /src=\{previewUrl\}/);
