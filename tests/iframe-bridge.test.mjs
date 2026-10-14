@@ -29,14 +29,18 @@ test("the capture bridge is valid JavaScript", () => {
   assert.doesNotThrow(() => new Function(templateBody("captureBridge.textContent")));
 });
 
-test("the capture bridge materializes Lycoris pseudo-elements before PNG export", () => {
+test("the capture bridge creates static Lycoris poles in the live document before capture", () => {
   const bridge = templateBody("captureBridge.textContent");
-  assert.match(bridge, /onclone:\s*clonedDocument\s*=>/);
+  assert.match(bridge, /root\.classList\.contains\('we-lycoris-layout'\)/);
   assert.match(bridge, /data-we-export-static-pole/);
-  assert.match(bridge, /we-exporting-static-poles/);
-  assert.match(bridge, /pseudo\.item\(i\)/);
+  assert.match(bridge, /data-we-export-pole-style/);
+  assert.match(bridge, /insertedPoles\.push\(pole\)/);
+  assert.match(bridge, /poleCurve = Number\(config\.poleCurve \|\| 0\)/);
+  assert.match(bridge, /poleWidth = Math\.max\(1, Number\(config\.poleWidth \|\| 10\)\)/);
+  assert.match(bridge, /requestAnimationFrame\(\(\) => requestAnimationFrame\(resolve\)\)/);
   assert.match(bridge, /content: none !important; display: none !important/);
-});
+  assert.doesNotMatch(bridge, /onclone:\s*clonedDocument/);
+});;
 
 test("the preview uses srcDoc so the complete rewritten project reaches the iframe", () => {
   assert.match(source, /srcDoc=\{previewHtml\}/);
