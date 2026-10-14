@@ -40,7 +40,7 @@ test("the capture bridge creates static Lycoris poles in the live document befor
   assert.match(bridge, /requestAnimationFrame\(\(\) => requestAnimationFrame\(resolve\)\)/);
   assert.match(bridge, /content: none !important; display: none !important/);
   assert.doesNotMatch(bridge, /onclone:\s*clonedDocument/);
-});;
+});
 
 test("the preview uses srcDoc so the complete rewritten project reaches the iframe", () => {
   assert.match(source, /srcDoc=\{previewHtml\}/);
