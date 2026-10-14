@@ -675,6 +675,38 @@ export default function WallpaperStillStudio() {
               logging: false,
               windowWidth: window.innerWidth,
               windowHeight: window.innerHeight,
+              onclone: clonedDocument => {
+                // html2canvas can omit CSS-generated ::after content in its cloned document.
+                // Materialize the Lycoris support pole as a real element for reliable PNG export.
+                const root = clonedDocument.documentElement;
+                if (!root.classList.contains('we-lycoris-layout')) return;
+                const cloneWindow = clonedDocument.defaultView;
+                if (!cloneWindow) return;
+                const poleClones = [];
+                clonedDocument.querySelectorAll('.sakana-box').forEach(box => {
+                  const pseudo = cloneWindow.getComputedStyle(box, '::after');
+                  const content = pseudo.getPropertyValue('content');
+                  if (!content || content === 'none' || content === 'normal' ||
+                      pseudo.display === 'none' || pseudo.visibility === 'hidden' ||
+                      Number(pseudo.opacity) === 0) return;
+                  const pole = clonedDocument.createElement('div');
+                  pole.setAttribute('data-we-export-static-pole', '');
+                  for (let i = 0; i < pseudo.length; i += 1) {
+                    const property = pseudo.item(i);
+                    const value = pseudo.getPropertyValue(property);
+                    if (value) pole.style.setProperty(property, value, 'important');
+                  }
+                  pole.style.removeProperty('content');
+                  pole.style.setProperty('pointer-events', 'none', 'important');
+                  poleClones.push({ box, pole });
+                });
+                if (!poleClones.length) return;
+                const poleStyle = clonedDocument.createElement('style');
+                poleStyle.textContent = 'html.we-exporting-static-poles .sakana-box::after { content: none !important; display: none !important; }';
+                clonedDocument.head.appendChild(poleStyle);
+                root.classList.add('we-exporting-static-poles');
+                poleClones.forEach(({ box, pole }) => box.appendChild(pole));
+              },
             });
             const output = document.createElement('canvas');
             output.width = data.width;
